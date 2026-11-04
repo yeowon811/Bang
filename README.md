@@ -1,61 +1,56 @@
 # 황야의 결투 (가제)
 
-숨은 역할 + 거리 기반 총격전 온라인 카드 게임. 카드 구성은 80장(갈색 63 + 파란 17), 2~7명 (4명 미만은 테스트 모드).
+숨은 역할 + 거리 기반 총격전 온라인 카드 게임. 카드 80장(갈색 63 + 파란 17), 캐릭터 16명, 2~7명 (4명 미만은 테스트 모드).
 
-## 실행
+- 게임: https://yeowon811.github.io/Bang/
+- 관리자: https://yeowon811.github.io/Bang/#/admin (지정된 Google 계정만)
+
+## 구조 (서버 없음, 무료)
+
+| 역할 | 담당 |
+|---|---|
+| 웹사이트 | GitHub Pages (main 에 push 하면 자동 배포, `.github/workflows/deploy.yml`) |
+| 실시간 통신·저장 | Firebase Realtime Database (`src/net.ts`) |
+| 게임 진행 (규칙·봇·제한 시간) | **방장 브라우저** (`src/host.ts`) |
+| 로그인 | Firebase Auth — 플레이어는 익명, 관리자는 Google |
+| 보안 | `database.rules.json` — 각자 자기 손패·역할만 읽기 가능 |
+
+방장은 규칙 판정을 위해 전체 정보를 갖고 있으므로 친구끼리 하는 용도입니다. 방장이 나가면 게임이 멈추고, 돌아오면 이어집니다.
+
+## 로컬 실행
 
 ```bash
 npm install
 npm run dev
 ```
 
-- 게임: http://localhost:5173 — 탭을 여러 개 열면 각각 다른 플레이어로 접속됩니다.
-- 관리자: http://localhost:5173/admin — 기본 키 `admin` (`ADMIN_KEY` 환경변수로 변경)
+http://localhost:5173 — 탭마다 다른 플레이어로 접속됩니다. (PowerShell 실행 정책 오류 시 `npm.cmd run dev` 또는 `dev.cmd` 더블클릭)
 
-## 배포
+## Firebase 설정 (처음 한 번)
 
-[DEPLOY.md](DEPLOY.md) 참고 — Render / Fly.io / Docker. 배포 시 `ADMIN_KEY`(8자 이상) 필수.
+1. Authentication → Sign-in method: **익명**, **Google** 사용 설정
+2. Authentication → 설정 → 승인된 도메인: `yeowon811.github.io` 추가
+3. Realtime Database → 규칙: `database.rules.json` 내용 붙여넣고 게시 (규칙을 바꿀 때마다)
+4. GitHub 저장소 Settings → Pages → Source: **GitHub Actions**
 
-## 관리자 화면
+관리자 계정을 바꾸려면 `src/firebase.ts` 의 `ADMIN_EMAILS` 와 `database.rules.json` 의 이메일을 함께 바꾸세요.
 
-카드 22종 + 역할 4종 + 카드 뒷면마다 **이름 / 설명 / 이미지**를 바꿀 수 있습니다.
-변경 사항은 접속 중인 모든 플레이어 화면에 즉시 반영됩니다.
-
-- 이미지: `uploads/`에 저장 (2:3 비율 권장, 5MB 이하)
-- 이름·설명: `data/card-config.json`에 저장 (비우면 기본값)
-
-## 구조
+## 폴더
 
 | 경로 | 내용 |
 |---|---|
-| `shared/cards.ts` | 카드 정의 (장수, 효과, 기본 이름) |
-| `shared/engine.ts` | 규칙 엔진 (순수 로직, 서버가 실행) |
-| `shared/engine.test.ts` | 무작위 2000판 시뮬레이션 테스트 (`npm test`) |
-| `server/index.ts` | Express + Socket.IO 서버, 방 관리, 관리자 API |
-| `src/` | React 클라이언트 (로비, 게임 화면, 관리자) |
+| `shared/cards.ts`, `shared/characters.ts` | 카드·캐릭터 정의 |
+| `shared/engine.ts` | 규칙 엔진 (순수 로직) |
+| `shared/bot.ts` | 봇 AI |
+| `shared/*.test.ts` | 테스트 (`npm test`) |
+| `src/host.ts` | 방장 브라우저의 게임 진행 |
+| `src/net.ts` | Firebase 통신 |
+| `src/Game.tsx`, `src/App.tsx`, `src/Admin.tsx` | 게임·로비·관리자 화면 |
 
-## 캐릭터
+## 관리자 화면
 
-16명 (`shared/characters.ts`). 게임 시작 시 각자 2명을 제시받아 1명을 고릅니다 (20초, 시간 초과 시 자동 선택). 다른 사람의 캐릭터는 모두 고른 뒤 한꺼번에 공개됩니다. 관리자 화면 "캐릭터" 섹션에서 이름·설명·초상화 변경 가능.
-쓰러질 때 위스키 → 약초꾼 능력 순으로 자동 사용됩니다.
+카드 22종, 캐릭터 16명, 역할 4종, 카드 뒷면의 이름·설명·이미지를 바꿀 수 있습니다. 이미지는 400×600 이하 WEBP 로 줄여 데이터베이스에 저장되며, 바꾸면 접속 중인 모든 화면에 바로 반영됩니다. "오래된 방 정리"로 하루 지난 방을 지워 무료 용량을 관리하세요.
 
-## 봇
+## 무료 한도 (Firebase Spark)
 
-대기실에서 방장이 "🤖 봇 추가"로 넣고 ✕로 뺄 수 있습니다. 혼자서도 봇 3명과 정식 4인 게임이 가능합니다.
-- AI: `shared/bot.ts` — 공개 정보(보안관 정체, 누가 누구를 공격했는지)만 보고 적을 추정하는 규칙 기반
-- 행동 간격: 기본 0.9초 (`BOT_DELAY` 환경변수, ms)
-- 게임 중 연결이 끊긴 사람은 20초 뒤부터 봇이 대신 플레이하고, 재접속하면 바로 돌려받습니다 (`OFFLINE_GRACE`, ms)
-- 접속한 사람이 아무도 없으면 봇은 멈추고, 5분 안에 아무도 돌아오지 않으면 방이 삭제됩니다
-
-## 제한 시간
-
-| 상황 | 기본 | 시간 초과 시 | 환경변수 |
-|---|---|---|---|
-| 내 턴 (카드 내기) | 60초 | 턴 종료 (초과 손패는 자동으로 버림) | `TURN_TIMEOUT` |
-| 응답 · 만물상 · 뽑기 선택 · 버리기 | 20초 | 봇 로직으로 대신 처리 (회피 있으면 냄) | `RESPONSE_TIMEOUT` |
-
-턴 시간은 상대 응답을 기다리는 동안에도 이어서 줄어들고, 돌아왔을 때 최소 10초는 남겨 줍니다. 봇과 연결이 끊긴 사람에게는 적용되지 않습니다.
-
-## 채팅
-
-대기실과 게임 화면(오른쪽 아래)에서 같은 방 사람들과 대화할 수 있습니다. 최근 100개를 서버가 보관해 새로고침·재접속 시 다시 보여주고, 200자 제한과 0.5초 연속 전송 제한이 있습니다.
+동시 접속 100명, 저장 1GB, 월 다운로드 10GB.
