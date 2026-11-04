@@ -1,0 +1,84 @@
+{
+  "rules": {
+    "config": {
+      ".read": true,
+      "cards": {
+        "$key": {
+          ".write": "auth != null && auth.token.email === 'dudnjs811@gmail.com' && auth.token.email_verified === true",
+          "name": { ".validate": "newData.isString() && newData.val().length <= 30" },
+          "description": { ".validate": "newData.isString() && newData.val().length <= 200" },
+          "image": { ".validate": "newData.isString() && newData.val().length <= 1500000 && newData.val().beginsWith('data:image/')" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "roomIndex": {
+      ".read": "auth != null && auth.token.email === 'dudnjs811@gmail.com' && auth.token.email_verified === true",
+      "$code": {
+        ".write": "auth != null && ((!data.exists() && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid) || (auth.token.email === 'dudnjs811@gmail.com' && auth.token.email_verified === true) || root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid)",
+        ".validate": "!newData.exists() || newData.isNumber()"
+      }
+    },
+
+    "rooms": {
+      "$code": {
+        ".write": "auth != null && (data.child('meta/hostUid').val() === auth.uid || (auth.token.email === 'dudnjs811@gmail.com' && auth.token.email_verified === true))",
+
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid) || data.child('hostUid').val() === auth.uid || (newData.child('hostUid').val() === auth.uid && root.child('rooms/' + $code + '/players/' + auth.uid).exists() && root.child('rooms/' + $code + '/players/' + data.child('hostUid').val() + '/online').val() === false))",
+          ".validate": "!newData.exists() || (newData.child('hostUid').isString() && newData.child('started').isBoolean())"
+        },
+
+        "players": {
+          ".read": "auth != null",
+          "$pid": {
+            ".write": "auth != null && ($pid === auth.uid || root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid)",
+            ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 16 && newData.child('isBot').isBoolean())"
+          }
+        },
+
+        "actions": {
+          ".read": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid",
+          "$aid": {
+            ".write": "auth != null && (root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid || (!data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/players/' + auth.uid).exists()))",
+            ".validate": "!newData.exists() || (newData.child('a').isString() && newData.child('a').val().length < 2000)"
+          }
+        },
+
+        "feedback": {
+          "$pid": {
+            ".read": "auth != null && auth.uid === $pid",
+            ".write": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid"
+          }
+        },
+
+        "state": {
+          ".read": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid"
+        },
+
+        "views": {
+          "$pid": {
+            ".read": "auth != null && auth.uid === $pid",
+            ".write": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid"
+          }
+        },
+
+        "public": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid"
+        },
+
+        "chat": {
+          ".read": "auth != null && root.child('rooms/' + $code + '/players/' + auth.uid).exists()",
+          "$mid": {
+            ".write": "auth != null && (root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid || (!data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/players/' + auth.uid).exists()))",
+            ".validate": "!newData.exists() || (newData.child('text').isString() && newData.child('text').val().length <= 200 && newData.child('name').isString())"
+          }
+        }
+      }
+    }
+  }
+}

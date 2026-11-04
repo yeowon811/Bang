@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { CHAT_MAX_LENGTH, type ChatMessage } from '../shared/protocol';
-import { emit } from './socket';
+import { sendChat } from './net';
 
 const time = (at: number) => new Date(at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 
-export default function Chat({ messages, me, className = '' }: { messages: ChatMessage[]; me: string; className?: string }) {
+export default function Chat({ messages, me, myName, className = '' }: { messages: ChatMessage[]; me: string; myName: string; className?: string }) {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -16,7 +16,7 @@ export default function Chat({ messages, me, className = '' }: { messages: ChatM
   const send = async (e: FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
-    const res = await emit('chat', { text });
+    const res = await sendChat(text, myName);
     if (res.ok) {
       setText('');
       setError('');

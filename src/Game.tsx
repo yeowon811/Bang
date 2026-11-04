@@ -6,7 +6,7 @@ import Chat from './Chat';
 import FxLayer from './Fx';
 import CardView from './CardView';
 import { useCardConfig } from './cardConfig';
-import { sendAction, socket } from './socket';
+import { restartToLobby, sendAction } from './net';
 
 const ROLE_KO = { sheriff: '보안관', deputy: '부관', outlaw: '무법자', renegade: '배신자' } as const;
 const WINNER_KO = { law: '보안관 팀 승리!', outlaws: '무법자 팀 승리!', renegade: '배신자 승리!' } as const;
@@ -15,7 +15,7 @@ type Targeting = { cardId: string; kind: 'player' | 'playerCard'; type: CardType
 /** 손패에서 여러 장 고르는 모드: 턴 끝 버리기 / 약초꾼 능력 */
 type MultiSelect = 'discard' | 'herb' | null;
 
-export default function Game({ view, room, chat, onLeave }: { view: PlayerView; room: RoomInfo; chat: ChatMessage[]; onLeave: () => void }) {
+export default function Game({ view, room, chat, myName, onLeave }: { view: PlayerView; room: RoomInfo; chat: ChatMessage[]; myName: string; onLeave: () => void }) {
   const { cards, renderTokens } = useCardConfig();
   const [targeting, setTargeting] = useState<Targeting>(null);
   const [picker, setPicker] = useState<{ cardId: string; target: PublicPlayer } | null>(null);
@@ -187,7 +187,7 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
               {view.winner ? (
                 <div className="winner">
                   🏆 {WINNER_KO[view.winner]}
-                  {room.hostId === me.id && <button onClick={() => socket.emit('restartToLobby')}>대기실로</button>}
+                  {room.hostId === me.id && <button onClick={() => restartToLobby()}>대기실로</button>}
                   <button onClick={onLeave}>나가기</button>
                 </div>
               ) : (
@@ -330,7 +330,7 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
             </div>
           ))}
         </div>
-        <Chat messages={chat} me={me.id} className="game-chat" />
+        <Chat messages={chat} me={me.id} myName={myName} className="game-chat" />
       </aside>
 
       {detailId && <PlayerDetail />}
