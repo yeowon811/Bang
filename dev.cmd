@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0"
-echo 황야의 결투 개발 서버를 시작합니다... (종료: Ctrl+C)
+echo K-뉴딜 2기 뱅 개발 서버를 시작합니다... (종료: Ctrl+C)
 echo 브라우저에서 http://localhost:5173 을 여세요.
 echo.
 if not exist node_modules (

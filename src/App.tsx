@@ -163,7 +163,7 @@ export default function App() {
   return (
     <div className="center-screen">
       <div className="panel lobby">
-        <h1>🤠 황야의 결투</h1>
+        <h1>🤠 K-뉴딜 2기 뱅</h1>
         <p className="hint">숨은 역할 · 거리 기반 총격전 카드 게임</p>
         <input placeholder="이름" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} />
         <button className="primary" disabled={busy} onClick={() => enter('createRoom')}>

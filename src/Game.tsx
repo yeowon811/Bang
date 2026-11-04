@@ -21,6 +21,13 @@ export default function Game({ view, room, chat, myName, onLeave }: { view: Play
   const [picker, setPicker] = useState<{ cardId: string; target: PublicPlayer } | null>(null);
   /** 자세히 보기 중인 플레이어 */
   const [detailId, setDetailId] = useState<string | null>(null);
+  /** 게임 시작 시 내 역할 안내 (캐릭터 고르기 단계에서 처음 들어왔을 때) */
+  const [roleIntro, setRoleIntro] = useState(() => view.phase === 'pickCharacter');
+  useEffect(() => {
+    if (!roleIntro) return;
+    const t = setTimeout(() => setRoleIntro(false), 7000);
+    return () => clearTimeout(t);
+  }, [roleIntro]);
   const [selected, setSelected] = useState<string[]>([]);
   const [herbMode, setHerbMode] = useState(false);
   const [scoutSel, setScoutSel] = useState<string[]>([]);
@@ -192,11 +199,11 @@ export default function Game({ view, room, chat, myName, onLeave }: { view: Play
                 </div>
               ) : (
                 <div className="prompt-line">
-                  <PromptText />
+                  {PromptText()}
                   {mySeconds !== undefined && <Timer seconds={mySeconds} kind={room.deadline!.kind} />}
                 </div>
               )}
-              {drawing && <DrawChoice />}
+              {drawing && DrawChoice()}
               {error && <div className="error">{error}</div>}
             </div>
           </div>
@@ -333,7 +340,9 @@ export default function Game({ view, room, chat, myName, onLeave }: { view: Play
         <Chat messages={chat} me={me.id} myName={myName} className="game-chat" />
       </aside>
 
-      {detailId && <PlayerDetail />}
+      {roleIntro && me.role && RoleIntro()}
+
+      {detailId && PlayerDetail()}
 
       {picker && (
         <div className="modal" onClick={() => setPicker(null)}>
@@ -400,6 +409,31 @@ export default function Game({ view, room, chat, myName, onLeave }: { view: Play
       );
     }
     return null;
+  }
+
+  /** 게임 시작 시 "당신은 ○○(으)로 시작합니다" + 역할 카드 */
+  function RoleIntro() {
+    const role = me.role!;
+    const info = cards[`role-${role}`];
+    return (
+      <div className="modal role-intro" onClick={() => setRoleIntro(false)}>
+        <div className={`role-intro-body role-intro-${role}`} onClick={(e) => e.stopPropagation()}>
+          <div className="role-intro-title">
+            당신은 <b>{info?.name ?? ROLE_KO[role]}</b>(으)로 시작합니다
+          </div>
+          <div className="role-intro-card">
+            <CardView imageKey={`role-${role}`} size="zoom" noZoom />
+          </div>
+          <p className="role-intro-goal">🎯 {info?.description}</p>
+          <p className="role-intro-note">
+            {role === 'sheriff' ? '⭐ 보안관은 모두에게 정체가 공개되고, 체력이 1 더 많습니다.' : '🤫 역할은 다른 사람에게 비밀입니다. 들키지 않게 조심하세요!'}
+          </p>
+          <button className="primary" onClick={() => setRoleIntro(false)}>
+            {view.phase === 'pickCharacter' ? '확인하고 캐릭터 고르기' : '확인'}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   /** 플레이어 자세히 보기: 캐릭터·체력·장착 카드 크게, 손패는 본인만 */

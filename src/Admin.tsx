@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { get, ref, remove, set, update } from 'firebase/database';
 import type { CardInfo } from '../shared/protocol';
+import { IMAGE_KEYS } from '../shared/cards';
 import CardView from './CardView';
 import { useCardConfig } from './cardConfig';
 import { ADMIN_EMAILS, auth, db, serverNow } from './firebase';
@@ -36,10 +37,43 @@ async function shrinkImage(file: File): Promise<string> {
   }
 }
 
+/**
+ * 이전(서버 버전) 데이터 가져오기: card-config.json 과 uploads 폴더의 이미지들을 한 번에 선택하면
+ * 이름·설명·이미지를 Firebase 로 옮긴다.
+ */
+async function importLegacy(files: File[], onProgress: (msg: string) => void): Promise<string> {
+  const json = files.find((f) => f.name.endsWith('.json'));
+  if (!json) throw new Error('card-config.json 파일을 이미지와 함께 선택하세요.');
+  const cfg: Record<string, { name?: string; description?: string; image?: string }> = JSON.parse(await json.text());
+  const images = new Map(files.filter((f) => f.type.startsWith('image/')).map((f) => [f.name, f]));
+  const entries = Object.entries(cfg).filter(([k]) => (IMAGE_KEYS as string[]).includes(k));
+  let names = 0;
+  let imgs = 0;
+  const missing: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const [key, v] = entries[i];
+    onProgress(`가져오는 중… ${i + 1}/${entries.length} (${key})`);
+    const patch: Record<string, string> = {};
+    if (v.name) patch.name = v.name;
+    if (v.description) patch.description = v.description;
+    if (v.image) {
+      const file = images.get(v.image);
+      if (file) patch.image = await shrinkImage(file);
+      else missing.push(v.image);
+    }
+    if (!Object.keys(patch).length) continue;
+    await update(ref(db, `config/cards/${key}`), patch);
+    if (patch.name || patch.description) names++;
+    if (patch.image) imgs++;
+  }
+  return `가져오기 완료: 이름/설명 ${names}개, 이미지 ${imgs}개${missing.length ? ` (찾지 못한 이미지 ${missing.length}개)` : ''}`;
+}
+
 export default function Admin() {
   const { list } = useCardConfig();
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [msg, setMsg] = useState('');
+  const [importing, setImporting] = useState('');
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -106,6 +140,29 @@ export default function Admin() {
         <h1>카드 관리</h1>
         <span className="hint">카드 {total}장 · 이미지는 자동으로 400×600 이하로 줄여 저장됩니다</span>
         {msg && <span className="toast">{msg}</span>}
+        <label className="button" title="card-config.json 과 이미지 파일들을 함께 선택">
+          {importing || '이전 데이터 가져오기'}
+          <input
+            type="file"
+            multiple
+            accept=".json,image/*"
+            hidden
+            disabled={!!importing}
+            onChange={async (e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = '';
+              if (!files.length) return;
+              try {
+                const result = await importLegacy(files, setImporting);
+                flash(result);
+              } catch (err) {
+                setMsg('가져오기 실패: ' + String((err as Error).message ?? err).slice(0, 120));
+              } finally {
+                setImporting('');
+              }
+            }}
+          />
+        </label>
         <button onClick={cleanRooms}>오래된 방 정리</button>
         <button onClick={() => signOut(auth)}>로그아웃 ({user!.email})</button>
         <a href="#/">← 게임으로</a>

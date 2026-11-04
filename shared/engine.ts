@@ -40,6 +40,8 @@ export type GameEvent = { seq: number } & (
   | { type: 'steal'; from: string; to: string; card?: CardType }
   | { type: 'discard'; to: string; card: CardType }
   | { type: 'pick'; to: string; card: CardType }
+  /** 덱에서 카드를 뽑음 (무엇인지는 비공개) */
+  | { type: 'draw'; to: string; count: number }
 );
 type EventInput = GameEvent extends infer E ? (E extends { seq: number } ? Omit<E, 'seq'> : never) : never;
 
@@ -189,6 +191,7 @@ function beginGame(state: GameState) {
     p.maxHp = CHAR_MAP[p.character].hp + (p.role === 'sheriff' ? 1 : 0);
     p.hp = p.maxHp;
     for (let i = 0; i < p.hp; i++) p.hand.push(draw(state));
+    ev(state, { type: 'draw', to: p.id, count: p.hp });
   }
   state.turn = state.players.findIndex((p) => p.role === 'sheriff');
   log(state, `게임 시작! 각자 체력(총알 수)만큼 카드를 받았습니다. 보안관 ${state.players[state.turn].name}부터 시작합니다.`);
@@ -287,6 +290,7 @@ function emptyHandCheck(s: GameState) {
   for (const p of s.players) {
     if (p.alive && p.character === 'emptyhand' && p.hand.length === 0) {
       p.hand.push(draw(s));
+      ev(s, { type: 'draw', to: p.id, count: 1 });
       log(s, `${p.name}: ${charName(p)} 능력으로 카드 1장을 뽑았습니다.`);
     }
   }
@@ -316,6 +320,7 @@ function damage(s: GameState, target: Player, amount: number, attackerId: string
 
   if (target.character === 'thickskin') {
     for (let i = 0; i < amount; i++) target.hand.push(draw(s));
+    ev(s, { type: 'draw', to: target.id, count: amount });
     log(s, `${target.name}: ${charName(target)} 능력으로 카드 ${amount}장을 뽑았습니다.`);
   }
   const attacker = getP(s, attackerId ?? undefined);
@@ -347,6 +352,7 @@ function kill(s: GameState, victim: Player, attackerId: string | null) {
   if (attacker && attacker.alive && attacker !== victim) {
     if (victim.role === 'outlaw') {
       for (let i = 0; i < 3; i++) attacker.hand.push(draw(s));
+      ev(s, { type: 'draw', to: attacker.id, count: 3 });
       log(s, `${attacker.name}이(가) 무법자 처치 보상으로 카드 3장을 받았습니다.`);
     } else if (victim.role === 'deputy' && attacker.role === 'sheriff') {
       s.discard.push(...attacker.hand, ...attacker.inPlay);
@@ -432,9 +438,13 @@ function beginDraw(s: GameState, p: Player) {
       const c1 = draw(s);
       const c2 = draw(s);
       p.hand.push(c1, c2);
+      ev(s, { type: 'draw', to: p.id, count: 2 });
       const red = c2.suit === 'hearts' || c2.suit === 'diamonds';
       log(s, `${p.name}: ${charName(p)} 능력 — 두 번째 카드 ${cardLabel(c2)} 공개${red ? ', 1장 더 뽑습니다!' : ''}`);
-      if (red) p.hand.push(draw(s));
+      if (red) {
+        p.hand.push(draw(s));
+        ev(s, { type: 'draw', to: p.id, count: 1 });
+      }
       s.phase = 'play';
       return;
     }
@@ -456,6 +466,7 @@ function beginDraw(s: GameState, p: Player) {
       break;
   }
   p.hand.push(draw(s), draw(s));
+  ev(s, { type: 'draw', to: p.id, count: 2 });
   s.phase = 'play';
 }
 
@@ -465,6 +476,7 @@ function handleDrawChoice(s: GameState, me: Player, a: Extract<Action, { type: '
       const ids = a.cardIds ?? [];
       if (ids.length !== 2 || new Set(ids).size !== 2 || !ids.every((id) => s.drawCards.some((c) => c.id === id))) return '2장을 골라야 합니다.';
       for (const c of s.drawCards) (ids.includes(c.id) ? me.hand : s.deck).push(c);
+      ev(s, { type: 'draw', to: me.id, count: 2 });
       s.drawCards = [];
       log(s, `${me.name}: ${charName(me)} 능력으로 3장 중 2장을 골랐습니다.`);
       break;
@@ -474,18 +486,26 @@ function handleDrawChoice(s: GameState, me: Player, a: Extract<Action, { type: '
         if (!s.discard.length) return '버린 카드가 없습니다.';
         const top = s.discard.pop()!;
         me.hand.push(top, draw(s));
+        ev(s, { type: 'pick', to: me.id, card: top.type });
+        ev(s, { type: 'draw', to: me.id, count: 1 });
         log(s, `${me.name}: ${charName(me)} 능력으로 버린 카드에서 ${cardName(top.type)}을(를) 가져왔습니다.`);
-      } else if (a.source === 'deck') me.hand.push(draw(s), draw(s));
+      } else if (a.source === 'deck') {
+        me.hand.push(draw(s), draw(s));
+        ev(s, { type: 'draw', to: me.id, count: 2 });
+      }
       else return '뽑을 곳을 골라야 합니다.';
       break;
     case 'bandit': {
       if (a.source === 'deck') {
         me.hand.push(draw(s), draw(s));
+        ev(s, { type: 'draw', to: me.id, count: 2 });
         break;
       }
       const t = getP(s, a.source);
       if (!t || t === me || !t.alive || !t.hand.length) return '손패가 있는 다른 플레이어를 골라야 합니다.';
       me.hand.push(takeRandomFromHand(t), draw(s));
+      ev(s, { type: 'steal', from: t.id, to: me.id });
+      ev(s, { type: 'draw', to: me.id, count: 1 });
       log(s, `${me.name}: ${charName(me)} 능력으로 ${t.name}의 손패에서 1장을 빼앗았습니다.`);
       break;
     }
@@ -685,9 +705,11 @@ function playCard(s: GameState, me: Player, a: Extract<Action, { type: 'play' }>
       break;
     case 'stagecoach':
       me.hand.push(draw(s), draw(s));
+      ev(s, { type: 'draw', to: me.id, count: 2 });
       break;
     case 'wellsfargo':
       me.hand.push(draw(s), draw(s), draw(s));
+      ev(s, { type: 'draw', to: me.id, count: 3 });
       break;
     case 'steal':
     case 'sabotage': {

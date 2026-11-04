@@ -15,7 +15,7 @@ const ICON: Record<CardType, string> = {
 type Pt = { x: number; y: number };
 type Fx =
   | { id: number; kind: 'banner'; at: Pt; text: string; tone: 'bad' | 'good' | 'info' | 'turn' | 'plain' }
-  | { id: number; kind: 'proj'; from: Pt; to: Pt; content: 'bullet' | string }
+  | { id: number; kind: 'proj'; from: Pt; to: Pt; content: 'bullet' | 'cardback' | string }
   | { id: number; kind: 'big'; at: Pt; text: string };
 
 /** id를 뺀 Fx (유니온의 각 경우마다 Omit 적용) */
@@ -64,6 +64,15 @@ export default function FxLayer({ events, players, containerRef }: { events: Gam
   function center(): Pt {
     const c = containerRef.current;
     return c ? { x: c.clientWidth / 2, y: c.clientHeight / 2 } : { x: 0, y: 0 };
+  }
+  /** 덱 위치 (테이블 가운데 첫 번째 카드 더미) */
+  function deckPt(): Pt {
+    const c = containerRef.current;
+    const el = c?.querySelector<HTMLElement>('.piles .pile .card');
+    if (!c || !el) return center();
+    const cr = c.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return { x: r.left - cr.left + r.width / 2, y: r.top - cr.top + r.height / 2 };
   }
   function seatEl(pid: string) {
     return containerRef.current?.querySelector<HTMLElement>(`[data-pid="${CSS.escape(pid)}"]`) ?? null;
@@ -148,6 +157,14 @@ export default function FxLayer({ events, players, containerRef }: { events: Gam
         add({ kind: 'proj', from: seatPt(e.to), to: center(), content: ICON[e.card] }, 700);
         add({ kind: 'banner', at: seatPt(e.to), text: `${name(e.card)} 버려짐`, tone: 'bad' });
         break;
+      case 'draw': {
+        const from = deckPt();
+        const to = seatPt(e.to);
+        const n = Math.min(e.count, 5);
+        for (let i = 0; i < n; i++) setTimeout(() => add({ kind: 'proj', from, to, content: 'cardback' }, 750), i * 110);
+        setTimeout(() => add({ kind: 'banner', at: to, text: `🂠 +${e.count}장`, tone: 'plain' }, 1300), n * 110);
+        break;
+      }
       case 'pick':
         add({ kind: 'proj', from: center(), to: seatPt(e.to), content: ICON[e.card] }, 700);
         break;
@@ -173,6 +190,7 @@ export default function FxLayer({ events, players, containerRef }: { events: Gam
         const dy = f.to.y - f.from.y;
         const rot = `${Math.atan2(dy, dx)}rad`;
         const style = { left: f.from.x, top: f.from.y, '--dx': `${dx}px`, '--dy': `${dy}px`, '--rot': rot } as React.CSSProperties;
+        if (f.content === 'cardback') return <div key={f.id} className="fx-proj fx-cardback" style={{ ...style, '--rot': '0rad' } as React.CSSProperties} />;
         return f.content === 'bullet' ? (
           <div key={f.id} className="fx-proj fx-bullet" style={style} />
         ) : (

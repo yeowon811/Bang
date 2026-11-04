@@ -1,6 +1,6 @@
 // Firebase 초기화. 이 값들은 웹에 공개되는 접속 정보이며, 실제 보호는 database.rules.json 이 맡는다.
 import { initializeApp } from 'firebase/app';
-import { browserPopupRedirectResolver, browserSessionPersistence, initializeAuth, onAuthStateChanged, signInAnonymously, type User } from 'firebase/auth';
+import { browserPopupRedirectResolver, browserSessionPersistence, getAuth, initializeAuth, onAuthStateChanged, signInAnonymously, type User } from 'firebase/auth';
 import { getDatabase, ref, onValue } from 'firebase/database';
 
 const firebaseConfig = {
@@ -18,7 +18,14 @@ export const ADMIN_EMAILS = ['dudnjs811@gmail.com'];
 
 export const app = initializeApp(firebaseConfig);
 // 탭마다 별도 로그인 (한 브라우저에서 여러 탭으로 여러 플레이어 테스트 가능, 새로고침하면 같은 사람)
-export const auth = initializeAuth(app, { persistence: browserSessionPersistence, popupRedirectResolver: browserPopupRedirectResolver });
+// (개발 중 코드 변경으로 모듈이 다시 실행되면 이미 초기화된 auth 를 재사용)
+export const auth = (() => {
+  try {
+    return initializeAuth(app, { persistence: browserSessionPersistence, popupRedirectResolver: browserPopupRedirectResolver });
+  } catch {
+    return getAuth(app);
+  }
+})();
 export const db = getDatabase(app);
 
 /** 로그인된 사용자 (없으면 익명 로그인) */
