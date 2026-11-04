@@ -441,6 +441,16 @@ io.on('connection', (socket: Socket) => {
   socket.on('disconnect', () => leave());
 });
 
+httpServer.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ 포트 ${PORT}을(를) 이미 다른 프로그램이 쓰고 있습니다.`);
+    console.error('   이미 실행 중인 게임 서버(다른 터미널 창)가 있는지 확인하고 종료한 뒤 다시 실행하세요.');
+    console.error(`   Windows에서 찾기: netstat -ano | findstr :${PORT}\n`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 httpServer.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}  [${IS_PROD ? 'production' : 'development'}] 저장 위치: ${STORAGE_DIR}  관리자 키: ${ADMIN_KEY === 'admin' ? '기본값 admin' : '환경변수'}`);
 });
