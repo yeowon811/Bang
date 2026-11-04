@@ -1,0 +1,17 @@
+# Render.com 블루프린트 — 저장소를 연결하면 이 설정으로 서비스가 만들어집니다.
+# 영구 디스크(카드 이미지 보관)는 유료 플랜(Starter 이상)에서만 쓸 수 있습니다.
+services:
+  - type: web
+    name: showdown-online
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: ADMIN_KEY
+        generateValue: true # Render 대시보드에서 값 확인
+      - key: STORAGE_DIR
+        value: /data
+    disk:
+      name: showdown-data
+      mountPath: /data
+      sizeGB: 1
