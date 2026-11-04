@@ -24,6 +24,25 @@ export type Pending =
 
 export type Winner = 'law' | 'outlaws' | 'renegade';
 
+/** 애니메이션용 공개 이벤트 (숨은 정보는 담지 않는다) */
+export type GameEvent = { seq: number } & (
+  | { type: 'turn'; to: string }
+  | { type: 'play'; from: string; to?: string; card: CardType; as?: CardType }
+  | { type: 'damage'; to: string; amount: number; from?: string }
+  | { type: 'heal'; to: string; amount: number }
+  | { type: 'dodge'; to: string; card: CardType }
+  | { type: 'barrelFail'; to: string }
+  | { type: 'death'; to: string }
+  | { type: 'explode'; to: string }
+  | { type: 'jailSkip'; to: string }
+  | { type: 'jailEscape'; to: string }
+  /** card 없음 = 손패에서 (무엇인지 비공개) */
+  | { type: 'steal'; from: string; to: string; card?: CardType }
+  | { type: 'discard'; to: string; card: CardType }
+  | { type: 'pick'; to: string; card: CardType }
+);
+type EventInput = GameEvent extends infer E ? (E extends { seq: number } ? Omit<E, 'seq'> : never) : never;
+
 export interface GameState {
   players: Player[]; // 좌석 순서
   deck: Card[];
@@ -40,6 +59,8 @@ export interface GameState {
   pending: Pending | null;
   winner: Winner | null;
   log: string[];
+  events: GameEvent[];
+  eventSeq: number;
 }
 
 export type Action =
@@ -149,6 +170,8 @@ export function createGame(seats: { id: string; name: string }[], fixedCharacter
     pending: null,
     winner: null,
     log: [],
+    events: [],
+    eventSeq: 0,
   };
   if (fixedCharacters) {
     beginGame(state);
@@ -168,12 +191,17 @@ function beginGame(state: GameState) {
     for (let i = 0; i < p.hp; i++) p.hand.push(draw(state));
   }
   state.turn = state.players.findIndex((p) => p.role === 'sheriff');
-  log(state, `게임 시작! 보안관은 ${state.players[state.turn].name}입니다.`);
+  log(state, `게임 시작! 각자 체력(총알 수)만큼 카드를 받았습니다. 보안관 ${state.players[state.turn].name}부터 시작합니다.`);
   startTurn(state);
   emptyHandCheck(state);
 }
 
 // ---------- 내부 도우미 ----------
+function ev(s: GameState, e: EventInput) {
+  s.events.push({ ...e, seq: ++s.eventSeq } as GameEvent);
+  if (s.events.length > 40) s.events.shift();
+}
+
 function log(s: GameState, msg: string) {
   s.log.push(msg);
   if (s.log.length > 200) s.log.shift();
@@ -266,6 +294,7 @@ function emptyHandCheck(s: GameState) {
 
 function damage(s: GameState, target: Player, amount: number, attackerId: string | null) {
   target.hp -= amount;
+  ev(s, { type: 'damage', to: target.id, amount, from: attackerId ?? undefined });
   log(s, `${target.name}이(가) 피해 ${amount}를 받았습니다. (체력 ${Math.max(0, target.hp)})`);
   // 쓰러지기 직전: 위스키 → 약초꾼 능력 순으로 자동 사용
   while (target.hp <= 0) {
@@ -274,10 +303,12 @@ function damage(s: GameState, target: Player, amount: number, attackerId: string
       takeFromHand(target, beer.id);
       s.discard.push(beer);
       target.hp += 1;
+      ev(s, { type: 'heal', to: target.id, amount: 1 });
       log(s, `${target.name}이(가) ${cardName('beer')}로 버텼습니다! (체력 ${target.hp})`);
     } else if (target.character === 'herbalist' && target.hand.length >= 2) {
       s.discard.push(...target.hand.splice(0, 2));
       target.hp += 1;
+      ev(s, { type: 'heal', to: target.id, amount: 1 });
       log(s, `${target.name}이(가) ${charName(target)} 능력으로 카드 2장을 버리고 버텼습니다! (체력 ${target.hp})`);
     } else break;
   }
@@ -303,6 +334,7 @@ function kill(s: GameState, victim: Player, attackerId: string | null) {
   const left = [...victim.hand, ...victim.inPlay];
   victim.hand = [];
   victim.inPlay = [];
+  ev(s, { type: 'death', to: victim.id });
   log(s, `💀 ${victim.name} 탈락! 정체는 ${ROLE_KO[victim.role]}였습니다.`);
 
   const undertaker = s.players.find((p) => p.alive && p.character === 'undertaker');
@@ -352,6 +384,7 @@ function startTurn(s: GameState) {
     s.shotsPlayed = 0;
     s.pending = null;
     log(s, `── ${p.name}의 차례 ──`);
+    ev(s, { type: 'turn', to: p.id });
 
     const dyn = takeFromPlay(p, 'dynamite');
     if (dyn) {
@@ -359,6 +392,7 @@ function startTurn(s: GameState) {
       if (explodes(c)) {
         s.discard.push(dyn);
         log(s, `💥 ${cardName('dynamite')}이(가) 폭발했습니다!`);
+        ev(s, { type: 'explode', to: p.id });
         damage(s, p, 3, null);
         if (isOver(s)) return;
         if (!p.alive) {
@@ -378,10 +412,12 @@ function startTurn(s: GameState) {
       const c = drawCheck(s, p, cardName('jail'), isHeart);
       if (!isHeart(c)) {
         log(s, `${p.name}은(는) ${cardName('jail')}에 갇혀 턴을 건너뜁니다.`);
+        ev(s, { type: 'jailSkip', to: p.id });
         s.turn = nextAliveIndex(s, s.turn);
         continue;
       }
       log(s, `${p.name}이(가) ${cardName('jail')}에서 탈출했습니다!`);
+      ev(s, { type: 'jailEscape', to: p.id });
     }
 
     beginDraw(s, p);
@@ -521,6 +557,7 @@ function dispatch(s: GameState, playerId: string, a: Action): string | null {
     if (a.cardIds.length !== 2 || new Set(a.cardIds).size !== 2 || !a.cardIds.every((id) => me.hand.some((c) => c.id === id))) return '버릴 카드 2장을 골라야 합니다.';
     for (const id of a.cardIds) s.discard.push(takeFromHand(me, id)!);
     me.hp += 1;
+    ev(s, { type: 'heal', to: me.id, amount: 1 });
     log(s, `${me.name}: ${charName(me)} 능력으로 카드 2장을 버리고 체력 1을 회복했습니다.`);
     return null;
   }
@@ -604,6 +641,7 @@ function playCard(s: GameState, me: Player, a: Extract<Action, { type: 'play' }>
   const tName = target ? ` → ${target.name}` : '';
   const asText = type !== card.type ? ` (${cardName(type)}(으)로 사용)` : '';
   log(s, `${me.name}: ${cardName(card.type)}${asText}${tName}`);
+  ev(s, { type: 'play', from: me.id, to: target?.id, card: card.type, as: type !== card.type ? type : undefined });
 
   if (def.color === 'blue') {
     if (type === 'jail') {
@@ -636,9 +674,14 @@ function playCard(s: GameState, me: Player, a: Extract<Action, { type: 'play' }>
       break;
     case 'beer':
       me.hp += 1;
+      ev(s, { type: 'heal', to: me.id, amount: 1 });
       break;
     case 'saloon':
-      for (const p of s.players) if (p.alive) p.hp = Math.min(p.maxHp, p.hp + 1);
+      for (const p of s.players) {
+        if (!p.alive || p.hp >= p.maxHp) continue;
+        p.hp += 1;
+        ev(s, { type: 'heal', to: p.id, amount: 1 });
+      }
       break;
     case 'stagecoach':
       me.hand.push(draw(s), draw(s));
@@ -655,8 +698,11 @@ function playCard(s: GameState, me: Player, a: Extract<Action, { type: 'play' }>
         const i = target!.inPlay.findIndex((c) => c.id === a.targetCardId);
         taken = target!.inPlay.splice(i, 1)[0];
       }
-      if (type === 'steal') me.hand.push(taken);
-      else {
+      if (type === 'steal') {
+        me.hand.push(taken);
+        ev(s, { type: 'steal', from: target!.id, to: me.id, card: a.targetCardId === 'hand' ? undefined : taken.type });
+      } else {
+        ev(s, { type: 'discard', to: target!.id, card: taken.type });
         s.discard.push(taken);
         log(s, `${target!.name}의 ${cardName(taken.type)}이(가) 버려졌습니다.`);
       }
@@ -695,6 +741,7 @@ function handlePending(s: GameState, me: Player, a: Action): string | null {
     if (i < 0) return '없는 카드입니다.';
     const [c] = pend.cards.splice(i, 1);
     me.hand.push(c);
+    ev(s, { type: 'pick', to: me.id, card: c.type });
     log(s, `${me.name}이(가) ${cardName('store')}에서 ${cardName(c.type)}을(를) 가져갔습니다.`);
     pend.order.shift();
     while (pend.order.length && !getP(s, pend.order[0])?.alive) pend.order.shift();
@@ -715,6 +762,7 @@ function handlePending(s: GameState, me: Player, a: Action): string | null {
       takeFromHand(me, c.id);
       s.discard.push(c);
       log(s, `${me.name}이(가) 결투에서 ${cardName(c.type)}을(를) 냈습니다.`);
+      ev(s, { type: 'play', from: me.id, to: other, card: c.type, as: 'shot' });
       pend.responderId = other;
       return null;
     }
@@ -732,7 +780,9 @@ function handlePending(s: GameState, me: Player, a: Action): string | null {
     if (pend.barrelUsed >= barrelCount(me)) return '더 이상 판정할 수 없습니다.';
     pend.barrelUsed++;
     const c = drawCheck(s, me, cardName('barrel'), isHeart);
+    if (!isHeart(c)) ev(s, { type: 'barrelFail', to: me.id });
     if (isHeart(c)) {
+      ev(s, { type: 'dodge', to: me.id, card: 'barrel' });
       pend.needed--;
       log(s, `${me.name}이(가) ${cardName('barrel')} 덕분에 피했습니다!${pend.needed > 0 ? ` (회피 ${pend.needed}장 더 필요)` : ''}`);
       if (pend.needed <= 0) {
@@ -750,6 +800,7 @@ function handlePending(s: GameState, me: Player, a: Action): string | null {
     if (!c || !canAnswerAs(me, c.type, need)) return `${cardName(need)}만 낼 수 있습니다.`;
     takeFromHand(me, c.id);
     s.discard.push(c);
+    ev(s, { type: 'dodge', to: me.id, card: c.type });
     if (pend.kind === 'shot' && --pend.needed > 0) {
       log(s, `${me.name}이(가) ${cardName(c.type)}을(를) 냈습니다. (${pend.needed}장 더 필요)`);
       return null;
@@ -796,6 +847,7 @@ export interface PlayerView {
   discardTop: Card | null;
   winner: Winner | null;
   log: string[];
+  events: GameEvent[];
 }
 
 export function viewFor(s: GameState, playerId: string): PlayerView {
@@ -825,5 +877,6 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
     discardTop: s.discard[s.discard.length - 1] ?? null,
     winner: s.winner,
     log: s.log.slice(-60),
+    events: s.events,
   };
 }

@@ -207,3 +207,205 @@ button.mini { padding: 0 7px; margin-left: 6px; font-size: 12px; line-height: 20
 .lobby-chat { height: 220px; border: 1px solid #d8c29a; border-radius: 10px; background: #fffaf0; }
 .lobby-chat .chat-name { color: var(--accent); }
 .lobby-chat .chat-msg.mine .chat-name { color: var(--ok); }
+
+/* ---------- 원형 테이블 ---------- */
+.table-area { display: flex; flex-direction: column; gap: 8px; padding: 8px; min-width: 0; overflow: auto; }
+.felt-wrap { position: relative; flex: 1; min-height: 640px; }
+.felt {
+  position: absolute; inset: 8% 12%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, #2a5280 0%, #1a3758 55%, #102539 100%);
+  border: 12px solid #5a3a20;
+  box-shadow: inset 0 0 50px #000a, 0 12px 30px #000a, 0 0 0 3px #2e1c0e;
+}
+.seat-pos { position: absolute; transform: translate(-50%, -50%); z-index: 2; }
+.seat-pos-me { z-index: 3; }
+
+/* 플레이어 보드 */
+.seat {
+  position: relative;
+  width: 200px;
+  padding: 14px 9px 9px;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #f1ddb0 0%, #dcbd86 100%);
+  border: 3px solid #8a6238;
+  box-shadow: 0 6px 16px #0009;
+  color: var(--ink);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.seat.me { width: 236px; border-color: #c08a1e; }
+.seat.turn { border-color: #ffcf5a; box-shadow: 0 0 0 3px #ffcf5a88, 0 0 24px #ffcf5a88; }
+.seat.targetable { border-color: #6fd16a; cursor: pointer; animation: pulse 1s infinite alternate; }
+.seat.dead { opacity: 0.5; filter: grayscale(1); }
+.dist-tag {
+  position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+  background: #1c1c1ccc; color: #fff; padding: 2px 12px; border-radius: 6px;
+  font-weight: 800; font-size: 13px; white-space: nowrap; box-shadow: 0 2px 6px #0008;
+}
+.dist-tag.in-range { background: #2f7a3a; }
+.seat .seat-head { gap: 6px; }
+.seat .seat-name { flex: 1; min-width: 0; }
+.seat-body { display: flex; gap: 8px; align-items: flex-start; }
+.seat-info { gap: 5px; }
+
+/* 체력: 총알 모양 */
+.hp { display: flex; gap: 3px; align-items: flex-end; }
+.bullet { width: 10px; height: 20px; border-radius: 5px 5px 2px 2px; background: #00000022; border: 1px solid #0003; }
+.bullet.full { background: linear-gradient(90deg, #b8862b, #f6d67e 45%, #b8862b); border-color: #7a5512; }
+
+/* 손패 뒷면 부채꼴 */
+.hand-backs { display: flex; align-items: center; padding-left: 5px; }
+.mini-back {
+  width: 13px; height: 19px; margin-left: -5px; border-radius: 2px;
+  background: repeating-linear-gradient(45deg, #7a3b1e 0 3px, #8e4a26 3px 6px);
+  border: 1px solid #3a1a08; box-shadow: 1px 0 2px #0006;
+}
+.hand-count { margin-left: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.dead-label { font-size: 13px; font-weight: 700; color: var(--danger); }
+
+/* 장착 카드 줄 (무기 칸 먼저) */
+.in-play { display: flex; gap: 4px; flex-wrap: wrap; padding-top: 6px; border-top: 1px dashed #8a623866; }
+.weapon-slot {
+  display: grid; place-items: center; text-align: center; line-height: 1.2;
+  font-size: 9px; font-weight: 700; color: var(--muted);
+  background: #00000010; border: 2px dashed #8a6238aa; box-shadow: none;
+}
+
+/* 테이블 가운데 */
+.table-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(440px, 46%); z-index: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.piles { display: flex; gap: 22px; }
+.pile { color: #d8e4f0; }
+.table-center .prompt { width: 100%; max-width: none; min-width: 0; background: #0009; }
+.table-overlay { position: absolute; inset: 0; display: grid; place-items: center; z-index: 6; pointer-events: none; }
+.table-overlay > * { pointer-events: auto; max-width: 92%; box-shadow: 0 10px 40px #000c; }
+.table-overlay .store { background: #1a1209ee; padding: 16px; }
+.table-overlay .char-pick { background: #1a1209ee; }
+
+/* 내 손패 */
+.hand-area { display: flex; gap: 12px; align-items: flex-end; background: #00000055; border-radius: 12px; padding: 8px 12px 12px; }
+.hand-area .hand { flex: 1; justify-content: center; }
+
+/* 좁은 화면: 테이블 대신 위에서 아래로 쌓기 */
+@media (max-width: 900px) {
+  .felt-wrap { min-height: 0; display: flex; flex-wrap: wrap; gap: 18px 10px; justify-content: center; padding-top: 14px; }
+  .felt { display: none; }
+  .seat-pos { position: static; transform: none; }
+  .seat-pos-me { order: 10; }
+  .seat { width: 170px; }
+  .seat.me { width: 100%; max-width: 360px; }
+  .table-center { position: static; transform: none; width: 100%; order: 5; }
+  .table-overlay { position: fixed; background: #0008; }
+}
+.hp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seat { gap: 5px; padding-top: 13px; }
+.card-xs { width: 38px; height: 57px; font-size: 8.5px; border-width: 1.5px; border-radius: 5px; }
+.card-xs .card-text { padding: 3px 2px; }
+.card-xs .card-suit { font-size: 0.85em; right: 1px; bottom: 1px; padding: 0 2px; }
+.seat-info .in-play { padding-top: 4px; }
+.seat { width: 214px; }
+.seat.me { width: 250px; }
+
+/* ---------- 큰 카드 / 확대 보기 ---------- */
+.card-xl { width: 132px; height: 198px; font-size: 14px; }
+.card-zoom { width: 240px; height: 360px; font-size: 19px; border-width: 3px; border-radius: 14px; cursor: default; }
+.card-zoom .card-text { padding: 14px 12px; gap: 10px; }
+.card-zoom .card-suit { font-size: 1em; right: 8px; bottom: 6px; padding: 1px 6px; }
+.zoom-hover {
+  position: fixed; left: 16px; top: 16px; z-index: 50; pointer-events: none;
+  display: flex; gap: 14px; align-items: flex-start;
+  background: #1a1209f2; border: 1px solid #8a6238; border-radius: 16px; padding: 14px;
+  box-shadow: 0 16px 40px #000c; max-width: min(560px, calc(100vw - 32px));
+}
+.zoom-text { display: flex; flex-direction: column; gap: 8px; color: #f3e6c8; width: 220px; }
+.zoom-text b { font-size: 22px; }
+.zoom-text p { margin: 0; font-size: 15px; line-height: 1.5; }
+.zoom-suit { font-weight: 800; font-size: 16px; }
+.zoom-suit.red { color: #ff8a7a; }
+.zoom-modal { z-index: 60; }
+.zoom-modal-body {
+  display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; justify-content: center;
+  background: #1a1209f5; border: 1px solid #8a6238; border-radius: 16px; padding: 18px; box-shadow: 0 16px 40px #000c;
+}
+.card.zoomable { cursor: zoom-in; }
+.card.zoomable.clickable { cursor: pointer; }
+@media (hover: none) { .zoom-hover { display: none; } }
+@media (max-width: 600px) {
+  .card-zoom { width: 200px; height: 300px; font-size: 16px; }
+  .zoom-text { width: 100%; }
+}
+.felt-wrap { min-height: 600px; }
+.hand-area .hand { gap: 8px; }
+.modal .panel { max-width: min(760px, 94vw); }
+
+/* ---------- 플레이어 자세히 보기 ---------- */
+.seat { cursor: pointer; }
+.detail { max-height: 90vh; overflow-y: auto; width: min(760px, 94vw); }
+.detail h3 { margin: 6px 0 0; font-size: 16px; color: var(--muted); }
+.detail-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.detail-head h2 { margin: 0; flex: 1; }
+.detail-main { display: flex; gap: 16px; flex-wrap: wrap; }
+.detail-info { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 8px; }
+.detail-info p { margin: 0; line-height: 1.5; }
+.detail-char { font-size: 20px; color: #6a3f9a; }
+.big-hp .bullet { width: 14px; height: 28px; }
+.hp-text { margin-left: 8px; font-weight: 700; }
+.detail-meta { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+
+/* ---------- 게임 애니메이션 ---------- */
+.fx-layer { position: absolute; inset: 0; pointer-events: none; z-index: 8; overflow: visible; }
+.fx-banner {
+  position: absolute; transform: translate(-50%, -50%);
+  padding: 5px 14px; border-radius: 999px; white-space: nowrap;
+  background: #000000d0; color: #fff; font-weight: 900; font-size: 18px;
+  box-shadow: 0 4px 14px #000a; animation: fxFloat 1.6s ease-out forwards;
+}
+.fx-bad { color: #ff7a6a; font-size: 22px; }
+.fx-good { color: #8fe38a; font-size: 22px; }
+.fx-info { color: #ffd27a; }
+.fx-turn { font-size: 26px; padding: 8px 22px; background: #5a3a20ee; color: #ffe2a8; border: 2px solid #c08a1e; animation-duration: 1.3s; }
+@keyframes fxFloat {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.7); }
+  15% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); }
+  70% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -140%) scale(1); }
+}
+.fx-proj { position: absolute; animation: fxFly 0.5s ease-in forwards; }
+.fx-bullet {
+  width: 26px; height: 7px; border-radius: 4px;
+  background: linear-gradient(90deg, transparent, #ffb84a 40%, #fff);
+  box-shadow: 0 0 12px #ffb84a, 0 0 4px #fff;
+}
+.fx-emoji { font-size: 30px; filter: drop-shadow(0 3px 4px #000a); }
+@keyframes fxFly {
+  0% { transform: translate(-50%, -50%) rotate(var(--rot)) scale(0.8); opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1.1); opacity: 0; }
+}
+.fx-big { position: absolute; font-size: 84px; transform: translate(-50%, -50%); animation: fxPop 1.4s ease-out forwards; filter: drop-shadow(0 6px 10px #000c); }
+@keyframes fxPop {
+  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  30% { transform: translate(-50%, -50%) scale(1.35); opacity: 1; }
+  70% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+/* 좌석 반응 (transform 대신 translate 사용: 좌석 위치용 transform과 겹치지 않게) */
+.seat.fx-hit { animation: fxShake 0.5s; box-shadow: 0 0 0 4px #ff4a3a, 0 0 30px #ff4a3a; }
+@keyframes fxShake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -9px 0; }
+  40% { translate: 9px 0; }
+  60% { translate: -6px 0; }
+  80% { translate: 4px 0; }
+}
+.seat.fx-heal { animation: fxGlow 0.9s; }
+@keyframes fxGlow { 0%, 100% { box-shadow: 0 6px 16px #0009; } 40% { box-shadow: 0 0 0 5px #5fd35a, 0 0 34px #5fd35a; } }
+.seat.fx-turn { animation: fxTurn 0.9s; }
+@keyframes fxTurn { 0% { box-shadow: 0 0 0 0 #ffcf5a; } 50% { box-shadow: 0 0 0 10px #ffcf5a55, 0 0 40px #ffcf5a; } 100% { box-shadow: 0 0 0 3px #ffcf5a88; } }
+@media (prefers-reduced-motion: reduce) {
+  .fx-proj, .seat.fx-hit { animation-duration: 0.01s; }
+}
+.fx-bullet { width: 38px; height: 10px; border-radius: 5px; box-shadow: 0 0 16px #ffb84a, 0 0 6px #fff; }

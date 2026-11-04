@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { CARD_DEF_MAP, CardType } from '../shared/cards';
+import { CARD_DEF_MAP, CardType, isWeapon } from '../shared/cards';
 import { barrelCount, canAnswerAs, distance, PlayerView, PublicPlayer, weaponRange } from '../shared/engine';
 import type { ChatMessage, RoomInfo } from '../shared/protocol';
 import Chat from './Chat';
+import FxLayer from './Fx';
 import CardView from './CardView';
 import { useCardConfig } from './cardConfig';
 import { sendAction, socket } from './socket';
@@ -18,11 +19,14 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
   const { cards, renderTokens } = useCardConfig();
   const [targeting, setTargeting] = useState<Targeting>(null);
   const [picker, setPicker] = useState<{ cardId: string; target: PublicPlayer } | null>(null);
+  /** 자세히 보기 중인 플레이어 */
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [herbMode, setHerbMode] = useState(false);
   const [scoutSel, setScoutSel] = useState<string[]>([]);
   const [error, setError] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   // 제한 시간: 서버가 보낸 남은 시간으로 로컬 종료 시각 계산 (시계 차이 무시)
   const [endsAt, setEndsAt] = useState<number | null>(null);
@@ -104,7 +108,9 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
   };
 
   const onSeatClick = (p: PublicPlayer) => {
-    if (!targeting || !p.alive || p.id === me.id) return;
+    // 대상 고르는 중이 아니면 자세히 보기
+    if (!targeting) return setDetailId(p.id);
+    if (!p.alive || p.id === me.id) return;
     if (targeting.kind === 'banditDraw') {
       if (p.handCount > 0) act({ type: 'drawChoice', source: p.id });
       return;
@@ -134,98 +140,116 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
     return true;
   };
 
+  // 테이블 둘레 좌석 배치: 나는 맨 아래, 다음 차례(시계 방향)는 내 왼쪽부터
+  const ordered = [me, ...others];
+  const seatPos = (k: number) => {
+    const theta = Math.PI / 2 + (k * 2 * Math.PI) / ordered.length;
+    return { left: `${50 + 38 * Math.cos(theta)}%`, top: `${51 + 33 * Math.sin(theta)}%` };
+  };
+
   return (
     <div className="game">
       <div className="table-area">
-        <div className="seats">
-          {others.map((p) => {
-            const d = p.alive && me.alive ? distance(view.players, me.id, p.id) : 0;
+        <div className="felt-wrap" ref={tableRef}>
+          <div className="felt" />
+          {ordered.map((p, k) => {
+            const isMe = p.id === me.id;
+            const d = !isMe && p.alive && me.alive ? distance(view.players, me.id, p.id) : 0;
             return (
-              <Seat
-                key={p.id}
-                p={p}
-                turn={view.turnPlayerId === p.id}
-                dist={d}
-                inRange={p.alive && d <= range}
-                canTarget={canTargetSeat(p, d)}
-                status={seatStatus(p.id)}
-                seconds={secondsLeft(p.id)}
-                onClick={() => onSeatClick(p)}
-              />
+              <div key={p.id} data-pid={p.id} className={isMe ? 'seat-pos seat-pos-me' : 'seat-pos'} style={seatPos(k)}>
+                <Seat
+                  p={p}
+                  turn={view.turnPlayerId === p.id}
+                  isMe={isMe}
+                  dist={isMe || !me.alive ? undefined : d}
+                  inRange={!isMe && me.alive && p.alive && d <= range}
+                  canTarget={!isMe && canTargetSeat(p, d)}
+                  status={isMe ? undefined : seatStatus(p.id)}
+                  seconds={secondsLeft(p.id)}
+                  onClick={() => onSeatClick(p)}
+                />
+              </div>
             );
           })}
-        </div>
 
-        <div className="center">
-          <div className="pile">
-            <CardView imageKey="back" size="sm" />
-            <span>덱 {view.deckCount}</span>
-          </div>
-          <div className="pile">
-            {view.discardTop ? <CardView card={view.discardTop} size="sm" /> : <div className="card card-sm empty" />}
-            <span>버린 카드</span>
-          </div>
-          <div className="prompt">
-            {view.winner ? (
-              <div className="winner">
-                🏆 {WINNER_KO[view.winner]}
-                {room.hostId === me.id && <button onClick={() => socket.emit('restartToLobby')}>대기실로</button>}
-                <button onClick={onLeave}>나가기</button>
+          <div className="table-center">
+            <div className="piles">
+              <div className="pile">
+                <CardView imageKey="back" size="md" />
+                <span>덱 {view.deckCount}</span>
               </div>
-            ) : (
-              <div className="prompt-line">
-                <PromptText />
-                {mySeconds !== undefined && <Timer seconds={mySeconds} kind={room.deadline!.kind} />}
+              <div className="pile">
+                {view.discardTop ? <CardView card={view.discardTop} size="md" /> : <div className="card card-md empty" />}
+                <span>버린 카드</span>
               </div>
-            )}
-            {drawing && <DrawChoice />}
-            {error && <div className="error">{error}</div>}
-          </div>
-        </div>
-
-        {view.phase === 'pickCharacter' && (
-          <div className="char-pick">
-            {view.myOffers.length ? (
-              <>
-                <h2>캐릭터를 고르세요</h2>
-                <div className="row wrap center-row">
-                  {view.myOffers.map((id) => {
-                    const info = cards[`char-${id}`];
-                    return (
-                      <div key={id} className="char-option" onClick={() => act({ type: 'pickCharacter', characterId: id })}>
-                        <CardView imageKey={`char-${id}`} size="lg" />
-                        <div className="char-option-text">
-                          <b>{info?.name ?? id}</b>
-                          <span className="hp-label">
-                            체력 {info?.hp}
-                            {me.role === 'sheriff' && ' (+1 보안관)'}
-                          </span>
-                          <p>{info?.description}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
+            </div>
+            <div className="prompt">
+              {view.winner ? (
+                <div className="winner">
+                  🏆 {WINNER_KO[view.winner]}
+                  {room.hostId === me.id && <button onClick={() => socket.emit('restartToLobby')}>대기실로</button>}
+                  <button onClick={onLeave}>나가기</button>
                 </div>
-              </>
-            ) : (
-              <h2>다른 플레이어가 고르는 중… ({view.players.filter((p) => p.picking).length}명 남음)</h2>
-            )}
-          </div>
-        )}
-
-        {pend?.kind === 'store' && (
-          <div className="store">
-            <b>{cardName('store')}</b> — {pend.order[0] === me.id ? '가져갈 카드를 고르세요' : `${nameOf(pend.order[0])}이(가) 고르는 중`}
-            <div className="row">
-              {pend.cards.map((c) => (
-                <CardView key={c.id} card={c} highlight={pend.order[0] === me.id} onClick={pend.order[0] === me.id ? () => act({ type: 'pick', cardId: c.id }) : undefined} />
-              ))}
+              ) : (
+                <div className="prompt-line">
+                  <PromptText />
+                  {mySeconds !== undefined && <Timer seconds={mySeconds} kind={room.deadline!.kind} />}
+                </div>
+              )}
+              {drawing && <DrawChoice />}
+              {error && <div className="error">{error}</div>}
             </div>
           </div>
-        )}
 
-        <div className="me-area">
-          <Seat p={me} turn={view.turnPlayerId === me.id} isMe seconds={mySeconds} />
+          <FxLayer events={view.events} players={view.players} containerRef={tableRef} />
+
+          {view.phase === 'pickCharacter' && (
+            <div className="table-overlay">
+              <div className="char-pick">
+                {view.myOffers.length ? (
+                  <>
+                    <h2>캐릭터를 고르세요</h2>
+                    <div className="row wrap center-row">
+                      {view.myOffers.map((id) => {
+                        const info = cards[`char-${id}`];
+                        return (
+                          <div key={id} className="char-option" onClick={() => act({ type: 'pickCharacter', characterId: id })}>
+                            <CardView imageKey={`char-${id}`} size="xl" />
+                            <div className="char-option-text">
+                              <b>{info?.name ?? id}</b>
+                              <span className="hp-label">
+                                체력 {info?.hp}
+                                {me.role === 'sheriff' && ' (+1 보안관)'}
+                              </span>
+                              <p>{info?.description}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <h2>다른 플레이어가 고르는 중… ({view.players.filter((p) => p.picking).length}명 남음)</h2>
+                )}
+              </div>
+            </div>
+          )}
+
+          {pend?.kind === 'store' && (
+            <div className="table-overlay">
+              <div className="store">
+                <b>{cardName('store')}</b> — {pend.order[0] === me.id ? '가져갈 카드를 고르세요' : `${nameOf(pend.order[0])}이(가) 고르는 중`}
+                <div className="row wrap center-row">
+                  {pend.cards.map((c) => (
+                    <CardView key={c.id} card={c} size="xl" highlight={pend.order[0] === me.id} onClick={pend.order[0] === me.id ? () => act({ type: 'pick', cardId: c.id }) : undefined} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="hand-area">
           <div className="hand">
             {view.myHand.map((c) => {
               const usable = multi ? true : need ? answers(c.type) : myTurn;
@@ -233,7 +257,7 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
                 <CardView
                   key={c.id}
                   card={c}
-                  size="lg"
+                  size="xl"
                   selected={(targeting && 'cardId' in targeting && targeting.cardId === c.id) || selected.includes(c.id)}
                   highlight={answers(c.type)}
                   dim={!usable}
@@ -241,6 +265,7 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
                 />
               );
             })}
+            {view.myHand.length === 0 && <span className="hint">손패 없음</span>}
           </div>
           <div className="actions">
             {myTurn && !herbMode && (
@@ -308,6 +333,8 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
         <Chat messages={chat} me={me.id} className="game-chat" />
       </aside>
 
+      {detailId && <PlayerDetail />}
+
       {picker && (
         <div className="modal" onClick={() => setPicker(null)}>
           <div className="panel" onClick={(e) => e.stopPropagation()}>
@@ -315,12 +342,12 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
             <div className="row wrap">
               {picker.target.handCount > 0 && (
                 <div className="pick-hand" onClick={() => act({ type: 'play', cardId: picker.cardId, targetId: picker.target.id, targetCardId: 'hand' })}>
-                  <CardView imageKey="back" />
+                  <CardView imageKey="back" size="xl" />
                   <span>손패에서 무작위 ({picker.target.handCount}장)</span>
                 </div>
               )}
               {picker.target.inPlay.map((c) => (
-                <CardView key={c.id} card={c} highlight onClick={() => act({ type: 'play', cardId: picker.cardId, targetId: picker.target.id, targetCardId: c.id })} />
+                <CardView key={c.id} card={c} size="xl" highlight onClick={() => act({ type: 'play', cardId: picker.cardId, targetId: picker.target.id, targetCardId: c.id })} />
               ))}
             </div>
             <button onClick={() => setPicker(null)}>취소</button>
@@ -340,6 +367,7 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
               <CardView
                 key={c.id}
                 card={c}
+                size="lg"
                 selected={scoutSel.includes(c.id)}
                 onClick={() => setScoutSel((s) => (s.includes(c.id) ? s.filter((x) => x !== c.id) : s.length < 2 ? [...s, c.id] : s))}
               />
@@ -372,6 +400,62 @@ export default function Game({ view, room, chat, onLeave }: { view: PlayerView; 
       );
     }
     return null;
+  }
+
+  /** 플레이어 자세히 보기: 캐릭터·체력·장착 카드 크게, 손패는 본인만 */
+  function PlayerDetail() {
+    const p = view.players.find((x) => x.id === detailId);
+    if (!p) return null;
+    const isMe = p.id === me.id;
+    const ch = p.character ? cards[`char-${p.character}`] : undefined;
+    const d = !isMe && p.alive && me.alive ? distance(view.players, me.id, p.id) : 0;
+    const weapon = p.inPlay.find((c) => isWeapon(c.type));
+    const pr = weaponRange(p);
+    return (
+      <div className="modal" onClick={() => setDetailId(null)}>
+        <div className="panel detail" onClick={(e) => e.stopPropagation()}>
+          <div className="detail-head">
+            <h2>
+              {p.name}
+              {isMe && ' (나)'}
+            </h2>
+            {p.role ? <span className={`role role-${p.role}`}>{ROLE_KO[p.role]}</span> : <span className="role role-unknown">역할 비공개</span>}
+            {!p.alive && <span className="dead-label">💀 탈락</span>}
+            <button onClick={() => setDetailId(null)}>닫기</button>
+          </div>
+          <div className="detail-main">
+            <CardView imageKey={p.character ? `char-${p.character}` : 'back'} size="xl" />
+            <div className="detail-info">
+              <b className="detail-char">{ch?.name ?? (p.picking ? '캐릭터 고르는 중…' : '')}</b>
+              <p>{ch?.description}</p>
+              <div className="hp big-hp">
+                {Array.from({ length: p.maxHp }, (_, i) => (
+                  <span key={i} className={i < p.hp ? 'bullet full' : 'bullet'} />
+                ))}
+                <span className="hp-text">
+                  체력 {p.hp}/{p.maxHp}
+                </span>
+              </div>
+              <div className="detail-meta">
+                <span>사거리 {pr}{weapon ? ` (${cards[weapon.type]?.name ?? weapon.type})` : ' (기본)'}</span>
+                {!isMe && p.alive && <span className={d <= range ? 'in-range' : ''}>나와의 거리 {d}{d <= range ? ' · 내 사거리 안 🎯' : ''}</span>}
+              </div>
+            </div>
+          </div>
+          <h3>장착한 카드 ({p.inPlay.length})</h3>
+          <div className="row wrap">
+            {p.inPlay.length ? p.inPlay.map((c) => <CardView key={c.id} card={c} size="xl" />) : <span className="hint">없음</span>}
+          </div>
+          <h3>손패 ({isMe ? view.myHand.length : p.handCount}장)</h3>
+          <div className="row wrap">
+            {isMe
+              ? view.myHand.map((c) => <CardView key={c.id} card={c} size="lg" />)
+              : Array.from({ length: p.handCount }, (_, i) => <CardView key={i} imageKey="back" size="md" />)}
+          </div>
+          {!isMe && <p className="hint">손패 내용은 규칙상 본인만 볼 수 있습니다. 카드에 마우스를 올리거나 오른쪽 클릭하면 크게 볼 수 있어요.</p>}
+        </div>
+      </div>
+    );
   }
 
   function PromptText() {
@@ -437,49 +521,69 @@ function Seat({
 }) {
   const { cards } = useCardConfig();
   const ch = p.character ? cards[`char-${p.character}`] : undefined;
+  const weapon = p.inPlay.find((c) => isWeapon(c.type));
+  const others = p.inPlay.filter((c) => c !== weapon);
+  const cardSize = isMe ? 'sm' : 'xs';
   const cls = ['seat', turn && 'turn', !p.alive && 'dead', canTarget && 'targetable', isMe && 'me'].filter(Boolean).join(' ');
   return (
     <div className={cls} onClick={onClick}>
+      {dist !== undefined && p.alive && (
+        <div className={inRange ? 'dist-tag in-range' : 'dist-tag'} title={inRange ? '내 사거리 안' : '내 사거리 밖'}>
+          거리 {dist}
+          {inRange && ' 🎯'}
+        </div>
+      )}
+      <div className="seat-head">
+        <span className="seat-name">
+          {p.name}
+          {isMe && ' (나)'}
+        </span>
+        {seconds !== undefined && <span className={seconds <= 5 ? 'clock urgent' : 'clock'}>⏱ {seconds}</span>}
+        {p.role ? <span className={`role role-${p.role}`}>{ROLE_KO[p.role]}</span> : <span className="role role-unknown">?</span>}
+      </div>
       <div className="seat-body">
-        <CardView imageKey={p.character ? `char-${p.character}` : 'back'} size="sm" title={ch ? `${ch.name} (체력 ${ch.hp})\n${ch.description}` : ''} />
+        <CardView imageKey={p.character ? `char-${p.character}` : 'back'} size="sm" title={ch ? `${ch.name} (체력 ${ch.hp})
+${ch.description}` : ''} />
         <div className="seat-info">
-          <div className="seat-head">
-            <span className="seat-name">
-              {p.name}
-              {isMe && ' (나)'}
-            </span>
-            {p.role ? <span className={`role role-${p.role}`}>{ROLE_KO[p.role]}</span> : <span className="role role-unknown">?</span>}
-          </div>
           <div className="char-name" title={ch?.description}>
             {p.character ? ch?.name ?? p.character : p.picking ? '캐릭터 고르는 중…' : ''}
           </div>
-          <div className="hp">
+          <div className="hp-row">
+          <div className="hp" title={`체력 ${p.hp}/${p.maxHp}`}>
             {Array.from({ length: p.maxHp }, (_, i) => (
               <span key={i} className={i < p.hp ? 'bullet full' : 'bullet'} />
             ))}
           </div>
-          <div className="seat-meta">
-            {!isMe && <span>🂠 {p.handCount}</span>}
-            {dist !== undefined && p.alive && (
-              <span className={inRange ? 'in-range' : ''}>
-                거리 {dist}
-                {inRange && ' 🎯'}
-              </span>
-            )}
-            {!p.alive && <span>💀 탈락</span>}
-            {seconds !== undefined && <span className={seconds <= 5 ? 'clock urgent' : 'clock'}>⏱ {seconds}</span>}
+          {!isMe && p.alive && (
+            <div className="hand-backs" title={`손패 ${p.handCount}장`}>
+              {Array.from({ length: Math.min(p.handCount, 8) }, (_, i) => (
+                <span key={i} className="mini-back" />
+              ))}
+              <span className="hand-count">{p.handCount}</span>
+            </div>
+          )}
           </div>
+          {!p.alive && <span className="dead-label">💀 탈락</span>}
+          {p.alive && (
+            <div className="in-play">
+              {weapon ? (
+                <CardView card={weapon} size={cardSize} />
+              ) : (
+                <div className={`card card-${cardSize} weapon-slot`} title="무기 없음: 기본 사거리 1">
+                  기본
+                  <br />
+                  사거리 1
+                </div>
+              )}
+              {others.map((c) => (
+                <CardView key={c.id} card={c} size={cardSize} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
       {status && <div className="seat-status">{status}</div>}
       {isMe && ch && <div className="char-desc">{ch.description}</div>}
-      {p.inPlay.length > 0 && (
-        <div className="in-play">
-          {p.inPlay.map((c) => (
-            <CardView key={c.id} card={c} size="sm" />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
